@@ -1,0 +1,18 @@
+name = "mp-book"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# 静态前端资源
+[assets]
+directory = "web/dist"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+not_found_handling = "single-page-application"
+
+[vars]
+NODE_ENV = "production"
+
+# 书源配置示例（部署前请替换为你的 OPDS 源）
+# OPDS_ENABLED = "true"
+# OPDS_SOURCES_JSON = '[{"id":"demo","name":"示例书源","url":"https://example.com/opds","enabled":true}]'

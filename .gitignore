@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.open-next/
+.wrangler/
+.env
+*.log
+web/dist/
+web/node_modules/
