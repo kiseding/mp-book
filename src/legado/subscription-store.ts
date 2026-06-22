@@ -20,7 +20,7 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchTextWithRetry(url: string, retries = 2): Promise<string> {
+async function fetchTextWithRetry(url: string, retries = 1): Promise<string> {
   const safe = await validateProxyUrlServerSide(url);
   if (!safe) throw new Error('订阅地址未通过安全校验');
 

@@ -48,6 +48,16 @@ const detailCache = new Map<string, { expiresAt: number; data: BookDetail }>();
 const tocCache = new Map<string, { expiresAt: number; data: BookChapter[] }>();
 const chapterCache = new Map<string, { expiresAt: number; data: BookChapterContent }>();
 
+// 缓存 cacheTTL，避免每次 fetchText 都重复解析配置（尤其是订阅源拉取消耗子请求）
+let _resolvedCacheTTL: number | null = null;
+async function getCacheTTL(): Promise<number> {
+  if (_resolvedCacheTTL === null) {
+    const { cacheTTL } = await resolveLegadoConfig();
+    _resolvedCacheTTL = cacheTTL;
+  }
+  return _resolvedCacheTTL;
+}
+
 interface RequestOptions {
   url: string;
   method?: string;
@@ -1286,11 +1296,12 @@ async function fetchText(source: BookSource, url: string): Promise<string> {
   if (!safe) throw new Error(`书源地址未通过安全校验: ${request.url}`);
   const cacheKey = `text|${source.id}|${request.method || 'GET'}|${request.url}|${request.body || ''}`;
   const cached = textCache.get(cacheKey);
-  const { cacheTTL } = await resolveLegadoConfig();
   if (cached && cached.expiresAt > Date.now()) return cached.data;
 
+  const cacheTTL = await getCacheTTL();
+
   let lastError: unknown;
-  const maxAttempts = Math.max(1, (request.retry ?? 2) + 1);
+  const maxAttempts = Math.max(1, (request.retry ?? 1) + 1);
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
@@ -1481,8 +1492,8 @@ export class LegadoClient {
     const rule = getRule(source);
     if (!rule.searchUrl || !rule.ruleSearch?.bookList) throw new Error('该 Legado 书源不支持搜索');
     const cacheKey = `search|${source.id}|${q}`;
-    const { cacheTTL } = await resolveLegadoConfig(username);
     const cached = searchCache.get(cacheKey);
+    const cacheTTL = await getCacheTTL();
     if (cached && cached.expiresAt > Date.now()) return { source, results: cached.data };
 
     const results: BookListItem[] = [];
@@ -1574,14 +1585,15 @@ export class LegadoClient {
     const sources = await this.getSearchSources(sourceId, username);
     const results: BookListItem[] = [];
     const failedSources: BookSearchFailure[] = [];
-    await Promise.all(sources.map(async (source) => {
+    // 逐个搜索而非并行，避免单个 Worker 调用子请求超限
+    for (const source of sources) {
       try {
         const sourceResult = await this.searchBooksSource(q, source, username);
         results.push(...sourceResult.results);
       } catch (error) {
         failedSources.push({ sourceId: source.id, sourceName: source.name, error: (error as Error).message });
       }
-    }));
+    }
     return { results, failedSources, totalSources: sources.length, searchedCount: sources.length };
   }
 
@@ -1692,9 +1704,9 @@ export class LegadoClient {
     const rule = getRule(source);
     const detailHref = href || fallback?.detailHref || '';
     const cacheKey = `detail|${source.id}|${detailHref}`;
-    const { cacheTTL } = await resolveLegadoConfig();
     const cached = detailCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return { ...cached.data, ...(!href && fallback ? fallback : {}) };
+    const cacheTTL = await getCacheTTL();
 
     let detail: BookDetail | null = null;
     if (detailHref && rule.ruleBookInfo) {
@@ -1767,9 +1779,9 @@ export class LegadoClient {
     const rule = getRule(source);
     if (!rule.ruleToc?.chapterList) throw new Error('该 Legado 书源缺少目录规则');
     const cacheKey = `toc|${source.id}|${tocHref}`;
-    const { cacheTTL } = await resolveLegadoConfig();
     const cached = tocCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.data;
+    const cacheTTL = await getCacheTTL();
 
     const targetUrl = normalizeUrl(sourceBase(source), tocHref);
     const html = await fetchText(source, targetUrl);
@@ -1810,7 +1822,7 @@ export class LegadoClient {
     if (rule.ruleToc.nextTocUrl) {
       let nextTocUrl = contentFromRule(html, rule.ruleToc.nextTocUrl, targetUrl);
       const visited = new Set([targetUrl]);
-      for (let page = 0; page < 8 && nextTocUrl; page += 1) {
+      for (let page = 0; page < 3 && nextTocUrl; page += 1) {
         const normalizedNext = normalizeUrl(targetUrl, nextTocUrl);
         if (!normalizedNext || visited.has(normalizedNext)) break;
         visited.add(normalizedNext);
@@ -1849,7 +1861,7 @@ export class LegadoClient {
     let pageUrl = targetUrl;
     const parts: string[] = [];
     const visited = new Set<string>();
-    for (let page = 0; page < 8 && pageUrl && !visited.has(pageUrl); page += 1) {
+    for (let page = 0; page < 3 && pageUrl && !visited.has(pageUrl); page += 1) {
       visited.add(pageUrl);
       const html = await fetchText(source, pageUrl);
       const part = chapterContentFromRule(html, rule.ruleContent.content, pageUrl);
