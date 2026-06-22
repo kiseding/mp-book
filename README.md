@@ -1,211 +1,240 @@
 # mp-book
 
-一个基于 Cloudflare Workers + Hono + React 的轻量电子书馆，支持 **OPDS** 和 **Legado（阅读 3.0）** 双引擎书源。
+基于 **Cloudflare Workers** 的轻量电子书馆，支持 **OPDS** 和 **Legado（阅读 3.0）** 双引擎书源。
 
-支持在线搜索书籍、目录浏览、章节阅读、EPUB/PDF 在线阅读、书架与阅读历史。Legado 书源可通过 UI 管理界面自由添加。
+所有网络请求均通过 Worker 端发起，充分利用 Cloudflare 全球网络加速访问海外书源。内置多用户认证和管理后台。
 
 ## 特性
 
-- 🌐 **双引擎**：OPDS 标准协议 + Legado（阅读 3.0）书源格式
-- 🔍 **多源搜索**：跨所有可用书源同时搜索
-- 📚 **分类目录**：支持 OPDS 导航目录和 Legado 分类浏览
-- 📖 **EPUB/PDF 在线阅读**：基于 epubjs 渲染
-- 📄 **章节阅读**：Legado 书源章节加载、上下翻页
-- 🎨 **书源管理**：Web UI 直接导入/订阅/启停自定义 Legado 书源
-- 💾 **书架与历史**：本地 localStorage 持久化
+- 🌐 **双引擎** — OPDS 标准协议 + Legado（阅读 3.0）书源格式
+- 🔍 **流式搜索** — 跨所有书源并行搜索，SSE 实时推送进度
+- 👥 **多用户** — HMAC-SHA256 令牌认证，支持 `owner` / `admin` / `user` 角色
+- 📊 **用户管理** — Web UI 管理用户（owner 专用）
+- 📚 **EPUB/PDF 在线阅读** — epubjs 渲染 + 分页
+- 📄 **章节阅读** — Legado 书源章节加载、上下翻页、目录侧栏
+- 🎨 **书源管理** — Web UI 导入/订阅/启停自定义 Legado 书源
+- 💾 **书架与历史** — localStorage 持久化
+- 🚀 **Worker 网络** — 所有外部图片、文件、内容走 Worker 代理，自带翻墙
 - 🌙 **深色模式**
-- 📱 **响应式设计**：桌面 + 移动端
-- 🚀 **一键部署**：GitHub Actions 自动部署到 Cloudflare Workers
+- 📱 **响应式设计** — 桌面 + 移动端适配
+- ⚙️ **GitHub Actions** — 自动部署，所有变量通过 GitHub Secrets 管理
 
-## 本地开发
+## 快速开始
 
 ### 前置条件
 
 - Node.js >= 18
 - npm
+- Cloudflare 账户
 
-### 安装
+### 本地开发
 
 ```bash
-# 克隆项目
-git clone <你的仓库地址>
+# 克隆并安装
+git clone https://github.com/kiseding/mp-book.git
 cd mp-book
-
-# 安装后端依赖
 npm install
-
-# 安装前端依赖
 cd web && npm install && cd ..
-```
 
-### 配置开发环境
+# 创建本地开发凭据
+cp .dev.vars.example .dev.vars
+# 编辑 .dev.vars 设置你的本地用户名密码
 
-在项目根目录创建 `.dev.vars` 文件（已加入 `.gitignore`，不会提交）：
-
-```bash
-# 启用 Legado 书源
-LEGADO_ENABLED=true
-
-# Legado 书源订阅地址（逗号分隔）
-LEGADO_SUBSCRIPTION_URLS=https://legado.aoaostar.com/sources/71e56d4f.json
-
-# 可选：直接配置 Legado 书源 JSON
-# LEGADO_SOURCES_JSON=[{"bookSourceName":"示例","bookSourceUrl":"https://...",...}]
-
-# 可选：OPDS 书源
-# OPDS_ENABLED=true
-# OPDS_SOURCES_JSON=[{"id":"demo","name":"示例","url":"https://..."}]
-```
-
-### 启动
-
-```bash
-# 同时启动前后端
+# 启动（前后端同时）
 npm run dev
 ```
 
-前端地址：http://localhost:5173（自动代理 API 到后端）  
-后端地址：http://localhost:8787
+前端 http://localhost:5173（自动代理 API 到后端）  
+后端 http://localhost:8787
 
-## 书源管理
+首次访问会自动重定向到登录页，使用 `.dev.vars` 中配置的 `USERNAME` / `PASSWORD` 登录。
 
-### Legado 书源
+### 部署到 Cloudflare Workers
 
-Legado（阅读 3.0）是开源社区广泛使用的书源格式。mp-book 支持两种方式添加：
+#### 1. 配置 GitHub Secrets
 
-**1. 环境变量 / Secrets（部署时配置）**
+在 GitHub 仓库 → **Settings → Secrets and variables → Actions** 添加以下 **Secrets**：
 
-- `LEGADO_ENABLED` — 设置为 `true` 启用
-- `LEGADO_SUBSCRIPTION_URLS` — 订阅地址，用逗号/分号/换行分隔
-- `LEGADO_SOURCES_JSON` — 直接传入 Legado 书源规则 JSON
+| Secret | 说明 |
+|--------|------|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API 令牌（需 Workers 权限） |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账户 ID |
+| `USERNAME` | 超级管理员用户名 |
+| `PASSWORD` | 超级管理员密码 |
+| `KV_NAMESPACE_ID` | （可选）KV 命名空间 ID，用于持久化自定义书源 |
 
-**2. Web UI 管理（运行时添加）**
+以及可选的 **Variables**（非敏感配置）：
 
-首页点击「管理书源」或导航栏齿轮图标，进入管理页面：
+| Variable | 说明 |
+|----------|------|
+| `NODE_ENV` | 默认 `production` |
+| `LEGADO_ENABLED` | 启用 Legado 书源（`true` / `false`） |
+| `LEGADO_SOURCES_JSON` | Legado 书源规则 JSON |
+| `LEGADO_SUBSCRIPTION_URLS` | Legado 书源订阅地址 |
+| `OPDS_ENABLED` | 启用 OPDS 书源 |
+| `OPDS_SOURCES_JSON` | OPDS 书源 JSON |
+| `OPDS_URL` | OPDS 默认书源 URL |
 
-- **导入 JSON** — 粘贴 Legado 书源 JSON（单个、数组或订阅格式对象）
-- **订阅地址** — 输入订阅 URL（如 `https://legado.aoaostar.com/sources/xxx.json`）
-- **已导入列表** — 查看所有导入记录，启用/停用/删除
+#### 2. 配置 KV 持久化（可选但推荐）
 
-> **注意**：本地开发时书源存储在内存中，Worker 重启后丢失。
-> 部署到 Cloudflare Workers 时可配置 KV 持久化（见下文「部署」章节）。
-
-### OPDS 书源
-
-通过环境变量 `OPDS_SOURCES_JSON` 配置，支持 Basic Auth、Header Auth 和自定义搜索模板。
-
-## 部署
-
-### 前置：KV 持久化（可选但推荐）
-
-自定义书源要持久化不丢失，需要先创建 KV 命名空间：
+不配 KV 不影响使用，但自定义书源仅存内存，Worker 重启后丢失。
 
 ```bash
 npx wrangler kv:namespace create "CUSTOM_SOURCES"
 ```
 
-会输出类似：
+将输出的 `id` 添加到 GitHub → **Secrets** → `KV_NAMESPACE_ID`。
 
-```
-📦 Creating namespace with title "mp-book-CUSTOM_SOURCES"
-✨ Success!
-Add the following to your wrangler.toml:
-[[kv_namespaces]]
-binding = "CUSTOM_SOURCES"
-id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-```
-
-将输出的 `[[kv_namespaces]]` 段取消注释填入 `wrangler.toml`。  
-如果不配 KV，自定义书源仅存内存，Worker 重启即丢失，但不会报错。
-
-### 方式一：GitHub Actions 自动部署
-
-1. Fork / 创建 GitHub 仓库并推送代码
-2. 在 Cloudflare 控制台获取 **Account ID** 和 **API Token**
-3. 在 GitHub 仓库 Settings → Secrets and variables → Actions 添加：
-   - `CLOUDFLARE_API_TOKEN`
-   - `CLOUDFLARE_ACCOUNT_ID`
-4. 推送任意 commit 到 `main` 分支触发部署
-5. 部署完成后，在 Cloudflare 控制台 → Workers & Pages → `mp-book` → Settings → Variables 中添加环境变量（见下方「书源配置示例」）
-
-### 方式二：手动部署
+#### 3. 推送触发部署
 
 ```bash
-# 构建前端
-cd web && npm run build && cd ..
-
-# 部署 Worker
-npx wrangler deploy
+git push origin main
 ```
 
-### 书源配置示例（Cloudflare Variables / Secrets）
+GitHub Actions 自动构建前端 → 注入 Secrets/Variables → 部署到 Workers。
 
-```
-LEGADO_ENABLED = true
-LEGADO_SUBSCRIPTION_URLS = https://legado.aoaostar.com/sources/71e56d4f.json
-OPDS_ENABLED = true
-OPDS_SOURCES_JSON = [{"id":"standardebooks","name":"Standard Ebooks","url":"https://standardebooks.org/feeds/all.atom","enabled":true}]
+部署完成后，也可在 **Cloudflare Dashboard → Workers → mp-book → Settings → Variables** 查看和管理所有环境变量。
+
+### 添加更多用户
+
+部署后用 `owner` 账号登录 → 导航栏点击用户图标 → 进入用户管理页面，可创建/编辑/删除普通用户和管理员。
+
+## 书源配置
+
+### Legado 书源
+
+Legado（阅读 3.0）是开源社区广泛使用的书源格式。支持三种方式添加：
+
+**1. 环境变量（部署时配置）**
+
+```bash
+LEGADO_ENABLED=true
+LEGADO_SUBSCRIPTION_URLS=https://legado.aoaostar.com/sources/71e56d4f.json,https://另一个订阅地址.json
+LEGADO_SOURCES_JSON=[{"bookSourceName":"示例","bookSourceUrl":"https://example.com"}]
 ```
 
-> 敏感配置（如密码）建议用 **Secrets** 而非明文 Vars。
+**2. Web UI 管理（运行时添加）**
+
+登录后点击「管理书源」：
+- **导入 JSON** — 粘贴 Legado 书源 JSON（支持单个、数组、订阅格式）
+- **订阅地址** — 输入远程订阅 URL
+- **已导入列表** — 启用/停用/删除
+
+**3. 自定义书源存储**
+
+Web UI 添加的书源存储在 KV 中，按用户隔离（每个用户只能看到自己添加的书源）。
+
+### OPDS 书源
+
+通过环境变量配置：
+
+```bash
+OPDS_ENABLED=true
+OPDS_SOURCES_JSON=[{"id":"demo","name":"标准书库","url":"https://standardebooks.org/feeds/all.atom","enabled":true}]
+```
+
+支持 Basic Auth、Header Auth 和自定义搜索模板。
+
+## 用户系统
+
+| 角色 | 权限 |
+|------|------|
+| `owner` | 超级管理员，由环境变量 `USERNAME`/`PASSWORD` 定义，不可删除 |
+| `admin` | 普通管理员，由 owner 在管理后台创建，可管理书源 |
+| `user` | 普通用户，仅可搜索和自己管理书源 |
+
+- 认证方式：HMAC-SHA256 签名令牌（24h 有效期，7d 刷新）
+- 令牌存储在 `auth` cookie 和 `Authorization` header
 
 ## API 一览
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/books/sources` | 获取所有书源（OPDS + Legado） |
-| GET | `/api/books/search?q=关键词&sourceId=可选` | 搜索书籍 |
-| GET | `/api/books/catalog?sourceId=&href=可选` | 浏览目录 |
-| GET/POST | `/api/books/detail?sourceId=&href=` | 获取书籍详情 |
-| GET | `/api/books/chapters?sourceId=&tocHref=` | 获取章节列表（Legado） |
-| GET | `/api/books/content?sourceId=&chapterHref=` | 获取章节正文（Legado） |
-| GET/POST | `/api/books/read/manifest` | 获取阅读清单（自动判断格式） |
+| **认证** | | |
+| POST | `/api/auth/login` | 登录 |
+| POST | `/api/auth/logout` | 登出 |
+| GET | `/api/auth/me` | 当前用户信息 |
+| **用户管理（owner 专用）** | | |
+| GET | `/api/auth/admin/users` | 用户列表 |
+| POST | `/api/auth/admin/users` | 创建用户 |
+| PUT | `/api/auth/admin/users/:username` | 修改用户 |
+| DELETE | `/api/auth/admin/users/:username` | 删除用户 |
+| **书源** | | |
+| GET | `/api/books/sources` | 获取所有书源 |
+| GET | `/api/books/search?q=` | 搜索书籍 |
+| GET | `/api/books/search/stream?q=` | SSE 流式搜索 |
+| GET | `/api/books/catalog?sourceId=&href=` | 浏览目录 |
+| GET | `/api/books/detail?sourceId=&href=` | 书籍详情 |
+| **阅读** | | |
+| GET | `/api/books/chapters?sourceId=&tocHref=` | 章节列表（Legado） |
+| GET | `/api/books/content?sourceId=&chapterHref=` | 章节正文（Legado） |
+| GET/POST | `/api/books/read/manifest` | 阅读清单 |
 | GET | `/api/books/file?sourceId=&href=` | 代理 EPUB/PDF 文件 |
-| GET | `/api/books/image?sourceId=&url=` | 代理图片（反防盗链） |
-| **GET** | `/api/books/custom-sources` | 获取自定义书源列表 |
-| **POST** | `/api/books/custom-sources` | 添加自定义书源（`action: "import"` 或 `"subscribe"`） |
-| **DELETE** | `/api/books/custom-sources/:id` | 删除自定义书源 |
-| **PUT** | `/api/books/custom-sources/:id/toggle` | 切换启用/停用 |
-| GET/POST | `/api/books/shelf` | 书架（占位） |
-| GET/POST | `/api/books/history` | 历史（占位） |
+| **代理** | | |
+| GET | `/api/image-proxy?url=` | 通用资源代理（走 Worker 网络） |
+| GET | `/api/books/image?sourceId=&url=` | 图片代理（反防盗链） |
+| **自定义书源（用户隔离）** | | |
+| GET | `/api/books/custom-sources` | 获取我的自定义书源 |
+| POST | `/api/books/custom-sources` | 导入/订阅 |
+| DELETE | `/api/books/custom-sources/:id` | 删除 |
+| PUT | `/api/books/custom-sources/:id/toggle` | 启用/停用 |
 
 ## 项目结构
 
 ```
 mp-book/
-├── src/                          # Hono Workers API
-│   ├── index.ts                  # 路由入口 & 中间件
-│   ├── types.ts                  # 共享类型定义
+├── src/                          # Workers 后端
+│   ├── index.ts                  # 路由入口、中间件、SSE 流式搜索
+│   ├── types.ts                  # 共享类型
 │   ├── opds.ts                   # OPDS 客户端
 │   ├── ssrf.ts                   # SSRF 安全校验
-│   ├── vm-polyfill.ts            # Sandbox JS 执行（Legado 规则）
-│   ├── legado/
-│   │   ├── client.ts             # Legado 书源引擎（规则解析、搜索、章节、正文）
-│   │   ├── subscription-store.ts # 订阅源管理
-│   │   └── custom-store.ts       # 用户自定义书源存储（支持 KV + 内存）
-├── web/                          # Vite + React 前端
+│   ├── vm-polyfill.ts            # JS 沙箱（Legado 规则执行）
+│   ├── auth/                     # 多用户认证
+│   │   ├── auth-utils.ts         # HMAC-SHA256 签名、令牌
+│   │   ├── middleware.ts         # Hono 认证中间件
+│   │   ├── routes.ts             # 登录/登出/用户信息
+│   │   ├── admin-routes.ts       # 用户管理 CRUD
+│   │   └── user-store.ts         # KV 用户存储（SHA-256 密码）
+│   └── legado/                   # Legado 书源引擎
+│       ├── client.ts             # 规则解析、搜索、章节、正文
+│       ├── custom-store.ts       # 用户自定义书源存储（KV 多用户隔离）
+│       └── subscription-store.ts # 订阅源管理
+├── web/                          # React 前端
 │   └── src/
 │       ├── pages/
-│       │   ├── Home.tsx          # 首页 - 书源列表
-│       │   ├── Search.tsx        # 搜索页
+│       │   ├── Home.tsx          # 首页
+│       │   ├── Search.tsx        # 搜索（SSE 流式）
 │       │   ├── Catalog.tsx       # 目录浏览
-│       │   ├── Detail.tsx        # 书籍详情 + 章节列表
+│       │   ├── Detail.tsx        # 书籍详情
 │       │   ├── Read.tsx          # 阅读器（章节/EPUB/PDF）
-│       │   ├── Shelf.tsx         # 书架
-│       │   └── SourceManager.tsx # 书源管理（导入 JSON/订阅 URL）
-│       └── api.ts                # 前端 API 调用
+│       │   ├── Shelf.tsx         # 书架 & 历史
+│       │   ├── Login.tsx         # 登录页
+│       │   ├── SourceManager.tsx # 书源管理
+│       │   └── UserManager.tsx   # 用户管理（owner 专用）
+│       ├── stores/
+│       │   └── auth.ts           # Zustand 认证状态
+│       ├── api.ts                # API 调用封装
+│       └── utils.ts              # 工具函数（URL 代理等）
 ├── wrangler.toml                 # Workers 配置
-└── .github/workflows/           # GitHub Actions 自动部署
+└── .github/workflows/deploy.yml  # GitHub Actions 自动部署
 ```
 
 ## 技术栈
 
-- **后端**：Cloudflare Workers + Hono
-- **前端**：Vite + React 18 + React Router 6 + Tailwind CSS
-- **EPUB 渲染**：epubjs
-- **HTML 解析**：cheerio（服务端）
-- **图标**：lucide-react
-- **阅读 3.0 规则**：支持 `@js:` / `<js>` 表达式、CSS 选择器、XPath、JSONPath、正则替换链
+| 层 | 技术 |
+|----|------|
+| 运行时 | Cloudflare Workers |
+| 后端框架 | Hono |
+| 前端 | React 18 + Vite |
+| 路由 | React Router 6 |
+| 样式 | Tailwind CSS |
+| 状态管理 | Zustand + persist |
+| 图标 | lucide-react |
+| EPUB 渲染 | epubjs |
+| HTML 解析 | cheerio（服务端） |
+| 认证 | HMAC-SHA256（Web Crypto API） |
+| 持久化 | Cloudflare KV（用户/书源） |
+| 搜索 | SSE 流式推送 |
 
 ## License
 

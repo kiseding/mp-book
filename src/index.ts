@@ -12,10 +12,17 @@ import {
   getStats,
   setKvBinding,
 } from './legado/custom-store';
+import { authRoutes } from './auth/routes';
+import { authMiddleware, getAuthInfo } from './auth/middleware';
+import { adminRoutes } from './auth/admin-routes';
+import * as userStore from './auth/user-store';
+import { streamSSE } from 'hono/streaming';
 
 export interface Env {
   ASSETS: { fetch: (req: Request) => Promise<Response> };
   CUSTOM_SOURCES?: KVNamespace;
+  USERNAME?: string;
+  PASSWORD?: string;
   OPDS_ENABLED?: string;
   OPDS_SOURCES_JSON?: string;
   OPDS_URL?: string;
@@ -45,13 +52,16 @@ app.use('*', async (c, next) => {
     'OPDS_CACHE_TTL_MS',
     'LEGADO_ENABLED', 'LEGADO_SOURCES_JSON', 'LEGADO_SUBSCRIPTION_URLS',
     'LEGADO_TIMEOUT_MS', 'LEGADO_CACHE_TTL_MS',
+    'USERNAME', 'PASSWORD',
   ];
   keys.forEach((k) => {
     const value = env[k];
     if (value && typeof value === 'string') (globalThis as unknown as Record<string, string>)[k] = value;
   });
-  // 传递 KV 绑定到自定义书源存储
-  setKvBinding((env as any).CUSTOM_SOURCES || null);
+  // 传递 KV 绑定到自定义书源存储和用户存储
+  const kv = (env as any).CUSTOM_SOURCES || null;
+  setKvBinding(kv);
+  userStore.setKvBinding(kv);
   await next();
 });
 
@@ -63,7 +73,17 @@ app.use('/api/*', cors({
 
 app.get('/api/health', (c) => c.json({ ok: true, time: Date.now() }));
 
+// ── 认证 ──────────────────────────────────────────────────
+
+app.route('/api/auth', authRoutes);
+// 管理路由需要 auth 中间件检查 role
+app.use('/api/auth/admin/*', authMiddleware());
+app.route('/api/auth/admin', adminRoutes);
+
 // ── 书源管理 ──────────────────────────────────────────────
+
+// 保护所有 /api/books/* 路由（/api/auth/* 除外）
+app.use('/api/books/*', authMiddleware());
 
 let sourceTypeCache: Map<string, 'opds' | 'legado'> | null = null;
 
@@ -91,9 +111,11 @@ async function resolveSourceType(sourceId: string): Promise<'opds' | 'legado'> {
 app.get('/api/books/sources', async (c) => {
   try {
     sourceTypeCache = null; // 强制刷新
+    const auth = getAuthInfo(c);
+    const username = auth?.username;
     const [opdsSources, legadoSources] = await Promise.all([
       opdsClient.getSources(),
-      legadoClient.getSources(),
+      legadoClient.getSources(username),
     ]);
     return c.json({ sources: [...opdsSources, ...legadoSources] });
   } catch (error) {
@@ -107,20 +129,22 @@ app.get('/api/books/search', async (c) => {
   try {
     const q = c.req.query('q')?.trim();
     const sourceId = c.req.query('sourceId')?.trim();
+    const auth = getAuthInfo(c);
+    const username = auth?.username;
     if (!q) return c.json({ results: [], failedSources: [] });
 
     if (sourceId) {
       const type = await resolveSourceType(sourceId);
       return c.json(
         type === 'legado'
-          ? await legadoClient.searchBooks(q, sourceId)
+          ? await legadoClient.searchBooks(q, sourceId, username)
           : await opdsClient.searchBooks(q, sourceId)
       );
     }
 
     const [opdsResult, legadoResult] = await Promise.allSettled([
       opdsClient.searchBooks(q),
-      legadoClient.searchBooks(q),
+      legadoClient.searchBooks(q, undefined, username),
     ]);
 
     const results: import('./types').BookListItem[] = [];
@@ -143,6 +167,56 @@ app.get('/api/books/search', async (c) => {
   } catch (error) {
     return c.json({ error: (error as Error).message }, 500);
   }
+});
+
+// ── 搜索 SSE 流（实时进度） ──────────────────────────────────
+
+app.get('/api/books/search/stream', async (c) => {
+  const q = c.req.query('q')?.trim();
+  if (!q) return c.json({ error: '缺少关键词' }, 400);
+  const auth = getAuthInfo(c);
+  const username = auth?.username;
+
+  // 仅 Legado 书源支持流式搜索
+  const sources = await legadoClient.getSearchSources(undefined, username);
+  const totalSources = sources.length;
+
+  return streamSSE(c, async (stream) => {
+    // 1) 发送开始事件，告知总书源数
+    await stream.writeSSE({ event: 'start', data: JSON.stringify({ totalSources }) });
+
+    // 2) 逐个搜索书源并推送进度
+    let completed = 0;
+    for (const source of sources) {
+      try {
+        const result = await legadoClient.searchBooksSource(q, source, username);
+        completed++;
+        await stream.writeSSE({
+          event: 'source_result',
+          data: JSON.stringify({
+            completedSources: completed,
+            sourceId: source.id,
+            sourceName: source.name,
+            results: result.results,
+          }),
+        });
+      } catch (e) {
+        completed++;
+        await stream.writeSSE({
+          event: 'source_error',
+          data: JSON.stringify({
+            completedSources: completed,
+            sourceId: source.id,
+            sourceName: source.name,
+            error: (e as Error).message,
+          }),
+        });
+      }
+    }
+
+    // 3) 完成
+    await stream.writeSSE({ event: 'complete', data: JSON.stringify({ completedSources: completed }) });
+  });
 });
 
 // ── 目录浏览 ──────────────────────────────────────────────
@@ -355,20 +429,53 @@ app.get('/api/books/image', async (c) => {
   }
 });
 
+// 通用图片代理 — 不需要 sourceId，所有外部图片通过 Worker 网络加载
+app.get('/api/image-proxy', async (c) => {
+  try {
+    const url = c.req.query('url');
+    if (!url) return c.json({ error: '缺少 url 参数' }, 400);
+    // 只代理 http(s) 图片
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return c.json({ error: '不支持的 URL 协议' }, 400);
+    }
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+      },
+    });
+    const headers = new Headers();
+    const ct = response.headers.get('content-type');
+    if (ct) headers.set('content-type', ct);
+    headers.set('cache-control', 'public, max-age=86400');
+    // 允许跨域使用
+    headers.set('Access-Control-Allow-Origin', '*');
+    return new Response(response.body, { status: response.status, headers });
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 500);
+  }
+});
+
 // ── 自定义书源管理 ──────────────────────────────────────
 
+function getUsername(c: any): string {
+  const auth = getAuthInfo(c);
+  return auth?.username || '';
+}
+
 app.get('/api/books/custom-sources', async (c) => {
-  const [entries, stats] = await Promise.all([getAllEntries(), getStats()]);
+  const username = getUsername(c);
+  const [entries, stats] = await Promise.all([getAllEntries(username), getStats(username)]);
   return c.json({ entries, stats });
 });
 
 app.post('/api/books/custom-sources', async (c) => {
   try {
+    const username = getUsername(c);
     const body = await c.req.json() as { action?: string; raw?: string; url?: string };
 
     if (body.action === 'import') {
       if (!body.raw) return c.json({ error: '缺少 raw 字段' }, 400);
-      const { entry, errors } = await addCustomSources(body.raw);
+      const { entry, errors } = await addCustomSources(username, body.raw);
       return c.json({ ok: true, entry, errors });
     }
 
@@ -376,7 +483,7 @@ app.post('/api/books/custom-sources', async (c) => {
       if (!body.url) return c.json({ error: '缺少 url 字段' }, 400);
       // 基本的 URL 校验
       try { new URL(body.url); } catch { return c.json({ error: '订阅地址不是合法 URL' }, 400); }
-      const { entry, errors } = await addSubscriptionSource(body.url);
+      const { entry, errors } = await addSubscriptionSource(username, body.url);
       return c.json({ ok: true, entry, errors });
     }
 
@@ -387,15 +494,17 @@ app.post('/api/books/custom-sources', async (c) => {
 });
 
 app.delete('/api/books/custom-sources/:id', async (c) => {
+  const username = getUsername(c);
   const id = c.req.param('id');
-  const ok = await removeCustomSource(id);
+  const ok = await removeCustomSource(username, id);
   if (!ok) return c.json({ error: '未找到该自定义书源' }, 404);
   return c.json({ ok: true });
 });
 
 app.put('/api/books/custom-sources/:id/toggle', async (c) => {
+  const username = getUsername(c);
   const id = c.req.param('id');
-  const entry = await toggleCustomSource(id);
+  const entry = await toggleCustomSource(username, id);
   if (!entry) return c.json({ error: '未找到该自定义书源' }, 404);
   return c.json({ ok: true, entry });
 });

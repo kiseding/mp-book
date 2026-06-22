@@ -5,6 +5,7 @@ import { getBookDetail, getLegadoChapters, postReadManifest } from '../api';
 import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import { saveToShelf, saveToShelfFromDetail } from '../stores/app';
+import { proxyUrl } from '../utils';
 import type { BookChapter, BookDetail } from '../types';
 
 export function Detail() {
@@ -80,7 +81,7 @@ export function Detail() {
         <div className="grid gap-6 p-6 md:grid-cols-[240px_1fr] md:p-8">
           <div className="mx-auto aspect-[3/4] w-full max-w-[240px] overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-50 to-amber-50 shadow-sm dark:from-gray-900 dark:to-emerald-950/20">
             {detail.cover ? (
-              <img src={detail.cover} alt={detail.title} className="h-full w-full object-cover" />
+              <img src={proxyUrl(detail.cover)} alt={detail.title} className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-400 dark:text-slate-500">
                 <BookOpen className="h-12 w-12" />

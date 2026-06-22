@@ -1,6 +1,7 @@
 import { BookOpen, Library } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { BookListItem } from '../types';
+import { proxyUrl } from '../utils';
 
 export function BookCard({ item, to }: { item: BookListItem; to?: string }) {
   const href = to || (item.detailHref
@@ -9,11 +10,11 @@ export function BookCard({ item, to }: { item: BookListItem; to?: string }) {
       ? `/read?sourceId=${encodeURIComponent(item.sourceId)}&acquisitionHref=${encodeURIComponent(item.acquisitionLinks[0].href)}`
       : '/');
   return (
-    <article className="group overflow-hidden rounded-[1.75rem] border border-emerald-100/80 bg-white/85 shadow-sm transition-colors hover:border-emerald-200 hover:bg-white dark:border-emerald-500/10 dark:bg-gray-950/70 dark:hover:border-emerald-500/30">
+    <article className="group overflow-hidden rounded-[1.75rem] border border-emerald-100/80 bg-white/85 shadow-sm transition-colors hover:border-emerald-200 hover:bg-white dark:border-emerald-500/10 dark:bg-gray-950/70 dark:hover:border-emerald-500/30 cursor-pointer">
       <Link to={href} className="block focus:outline-none focus:ring-2 focus:ring-inset focus:ring-emerald-500">
         <div className="relative aspect-[3/4] overflow-hidden bg-gradient-to-br from-emerald-50 to-amber-50 dark:from-gray-900 dark:to-emerald-950/20">
           {item.cover ? (
-            <img src={item.cover} alt={item.title} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
+            <img src={proxyUrl(item.cover)} alt={item.title} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-slate-400 dark:text-slate-500">
               <BookOpen className="h-8 w-8" />

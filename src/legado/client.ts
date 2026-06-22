@@ -31,7 +31,7 @@ import {
 } from '../types';
 import { validateProxyUrlServerSide } from '../ssrf';
 import { getSubscriptionSources, normalizeImportedSources } from './subscription-store';
-import { getEnabledSources as getCustomSources } from './custom-store';
+import { getEnabledSources } from './custom-store';
 
 interface ResolvedLegadoConfig {
   enabled: boolean;
@@ -1122,6 +1122,33 @@ function chapterPageStem(url: string) {
   }
 }
 
+/** 将内容中所有外部资源 URL 替换为 Worker 代理地址 */
+function proxyExternalUrls(content: string): string {
+  if (!content) return content;
+  // 代理 <img src="...">
+  content = content.replace(/<img\b([^>]*?)\bsrc=(['"])(.*?)\2([^>]*)>/gi, (match, before, quote, rawSrc, after) => {
+    const src = rawSrc.split(',{')[0];
+    if (!src || src.startsWith('/api/') || src.startsWith('data:')) return match;
+    if (!src.startsWith('http://') && !src.startsWith('https://')) return match;
+    const proxied = `/api/image-proxy?url=${encodeURIComponent(src)}`;
+    return `<img${before}src=${quote}${proxied}${quote}${after}>`;
+  });
+  // 代理 <source src="...">（视频/音频）
+  content = content.replace(/<source\b([^>]*?)\bsrc=(['"])(.*?)\2([^>]*)>/gi, (match, before, quote, rawSrc, after) => {
+    if (!rawSrc || rawSrc.startsWith('/api/') || rawSrc.startsWith('data:')) return match;
+    if (!rawSrc.startsWith('http://') && !rawSrc.startsWith('https://')) return match;
+    const proxied = `/api/image-proxy?url=${encodeURIComponent(rawSrc)}`;
+    return `<source${before}src=${quote}${proxied}${quote}${after}>`;
+  });
+  // 代理 <video poster="...">、<audio> 等其它 media 属性
+  content = content.replace(/\b(poster|href)=(['"])((?:https?:)?\/\/.*?)\2/gi, (match, attr, quote, url) => {
+    if (url.startsWith('/api/')) return match;
+    const proxied = `/api/image-proxy?url=${encodeURIComponent(url)}`;
+    return `${attr}=${quote}${proxied}${quote}`;
+  });
+  return content;
+}
+
 function proxyChapterImages(content: string, source: BookSource) {
   if (!/<img\b/i.test(content)) return content;
   const rule = source.legado;
@@ -1136,7 +1163,7 @@ function proxyChapterImages(content: string, source: BookSource) {
   });
 }
 
-async function resolveLegadoConfig(): Promise<ResolvedLegadoConfig> {
+async function resolveLegadoConfig(username?: string): Promise<ResolvedLegadoConfig> {
   let enabled = globalThis.OPDS_ENABLED === 'true' || globalThis.LEGADO_ENABLED === 'true';
   let sources: BookSource[] = [];
   const cacheTTL = Number(globalThis.LEGADO_CACHE_TTL_MS || globalThis.OPDS_CACHE_TTL_MS || 10 * 60 * 1000);
@@ -1154,10 +1181,10 @@ async function resolveLegadoConfig(): Promise<ResolvedLegadoConfig> {
     sources = [...sources, ...subscriptionSources];
   } catch {}
 
-  // 合并用户通过 UI 添加的自定义书源
+  // 合并用户通过 UI 添加的自定义书源（多用户隔离）
   let hasCustom = false;
   try {
-    const customSources = await getCustomSources();
+    const customSources = await getEnabledSources(username || '');
     if (customSources.length > 0) {
       sources = [...sources, ...customSources];
       hasCustom = true;
@@ -1427,8 +1454,8 @@ async function resolveExploreCategories(source: BookSource, rule: LegadoBookSour
 }
 
 export class LegadoClient {
-  async getSources(): Promise<BookSource[]> {
-    const config = await resolveLegadoConfig();
+  async getSources(username?: string): Promise<BookSource[]> {
+    const config = await resolveLegadoConfig(username);
     if (!config.enabled) return [];
     return config.sources.map((source) => {
       const resolved = resolveLegadoSource(source);
@@ -1446,15 +1473,15 @@ export class LegadoClient {
     });
   }
 
-  async getSearchSources(sourceId?: string): Promise<BookSource[]> {
-    return sourceId ? [await getSourceById(sourceId)] : (await resolveLegadoConfig()).sources;
+  async getSearchSources(sourceId?: string, username?: string): Promise<BookSource[]> {
+    return sourceId ? [await getSourceById(sourceId)] : (await resolveLegadoConfig(username)).sources;
   }
 
-  async searchBooksSource(q: string, source: BookSource): Promise<{ source: BookSource; results: BookListItem[] }> {
+  async searchBooksSource(q: string, source: BookSource, username?: string): Promise<{ source: BookSource; results: BookListItem[] }> {
     const rule = getRule(source);
     if (!rule.searchUrl || !rule.ruleSearch?.bookList) throw new Error('该 Legado 书源不支持搜索');
     const cacheKey = `search|${source.id}|${q}`;
-    const { cacheTTL } = await resolveLegadoConfig();
+    const { cacheTTL } = await resolveLegadoConfig(username);
     const cached = searchCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return { source, results: cached.data };
 
@@ -1543,19 +1570,19 @@ export class LegadoClient {
     return { source, results };
   }
 
-  async searchBooks(q: string, sourceId?: string): Promise<BookSearchResult> {
-    const sources = await this.getSearchSources(sourceId);
+  async searchBooks(q: string, sourceId?: string, username?: string): Promise<BookSearchResult> {
+    const sources = await this.getSearchSources(sourceId, username);
     const results: BookListItem[] = [];
     const failedSources: BookSearchFailure[] = [];
     await Promise.all(sources.map(async (source) => {
       try {
-        const sourceResult = await this.searchBooksSource(q, source);
+        const sourceResult = await this.searchBooksSource(q, source, username);
         results.push(...sourceResult.results);
       } catch (error) {
         failedSources.push({ sourceId: source.id, sourceName: source.name, error: (error as Error).message });
       }
     }));
-    return { results, failedSources };
+    return { results, failedSources, totalSources: sources.length, searchedCount: sources.length };
   }
 
   async getCatalog(sourceId: string, href?: string): Promise<BookCatalogResult> {
@@ -1840,10 +1867,10 @@ export class LegadoClient {
       id: stableId(`${source.id}|${targetUrl}`),
       title: index >= 0 ? chapters[index].title : '',
       href: targetUrl,
-      content: proxyChapterImages(cleanContent(applyRuleFilters(rawContent, [
+      content: proxyExternalUrls(proxyChapterImages(cleanContent(applyRuleFilters(rawContent, [
         ...(rule.ruleContent.sourceRegex ? [rule.ruleContent.sourceRegex, ''] : []),
         ...((rule.ruleContent as any).replaceRegex ? splitRuleFilters((rule.ruleContent as any).replaceRegex).filters : []),
-      ])), source),
+      ])), source)),
       previousHref: index > 0 ? chapters[index - 1].href : undefined,
       nextHref: index >= 0 && index + 1 < chapters.length ? chapters[index + 1].href : undefined,
     };

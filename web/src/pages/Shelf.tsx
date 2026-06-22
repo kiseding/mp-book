@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { BookOpen, Clock, Trash2 } from 'lucide-react';
 import { Empty } from '../components/ui/Empty';
 import { useHistoryStore, useShelfStore } from '../stores/app';
+import { proxyUrl } from '../utils';
 
 export function Shelf() {
   const { items, removeItem } = useShelfStore();
@@ -27,7 +28,7 @@ export function Shelf() {
                 <Link to={`/detail?sourceId=${encodeURIComponent(item.sourceId)}&href=${encodeURIComponent(item.detailHref || '')}`} className="block">
                   <div className="relative aspect-[3/4] overflow-hidden bg-gradient-to-br from-emerald-50 to-amber-50 dark:from-gray-900 dark:to-emerald-950/20">
                     {item.cover ? (
-                      <img src={item.cover} alt={item.title} className="h-full w-full object-cover" />
+                      <img src={proxyUrl(item.cover)} alt={item.title} className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-slate-400 dark:text-slate-500">
                         <BookOpen className="h-8 w-8" />
@@ -74,7 +75,7 @@ export function Shelf() {
               >
                 <div className="h-16 w-12 shrink-0 overflow-hidden rounded-lg bg-emerald-50 dark:bg-emerald-950/20">
                   {record.cover ? (
-                    <img src={record.cover} alt={record.title} className="h-full w-full object-cover" />
+                    <img src={proxyUrl(record.cover)} alt={record.title} className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full items-center justify-center">
                       <BookOpen className="h-5 w-5 text-emerald-300 dark:text-emerald-700" />

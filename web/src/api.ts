@@ -127,3 +127,59 @@ export async function deleteCustomSource(id: string): Promise<void> {
 export async function toggleCustomSource(id: string): Promise<{ ok: boolean; entry: CustomSourceEntry }> {
   return fetchJson(`${API_BASE}/books/custom-sources/${encodeURIComponent(id)}/toggle`, { method: 'PUT' });
 }
+
+// ── 认证 ───────────────────────────────────────────────────
+
+export interface AuthUser {
+  username: string;
+  role: 'owner' | 'admin' | 'user';
+}
+
+export async function login(username: string, password: string): Promise<{ ok: boolean; user: AuthUser }> {
+  return fetchJson(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE}/auth/logout`, { method: 'POST' });
+}
+
+export async function getMe(): Promise<{ user: AuthUser }> {
+  return fetchJson(`${API_BASE}/auth/me`);
+}
+
+// ── 用户管理（仅 owner）────────────────────────────────────
+
+export interface ManagedUser {
+  username: string;
+  role: 'owner' | 'admin' | 'user';
+  fromEnv?: boolean;
+  createdAt?: number;
+}
+
+export async function getUsers(): Promise<{ users: ManagedUser[] }> {
+  return fetchJson(`${API_BASE}/auth/admin/users`);
+}
+
+export async function createUser(username: string, password: string, role: 'admin' | 'user' = 'user'): Promise<{ ok: boolean; user: ManagedUser }> {
+  return fetchJson(`${API_BASE}/auth/admin/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, role }),
+  });
+}
+
+export async function updateUser(username: string, data: { password?: string; role?: 'admin' | 'user' }): Promise<{ ok: boolean; user: ManagedUser }> {
+  return fetchJson(`${API_BASE}/auth/admin/users/${encodeURIComponent(username)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteUser(username: string): Promise<void> {
+  await fetch(`${API_BASE}/auth/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
+}

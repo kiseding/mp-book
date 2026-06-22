@@ -10,12 +10,14 @@ binding = "ASSETS"
 html_handling = "auto-trailing-slash"
 not_found_handling = "single-page-application"
 
+# 所有环境变量通过 GitHub Settings → Secrets / Variables 注入
+# （见 .github/workflows/deploy.yml 的 vars / secrets 配置）
 [vars]
 NODE_ENV = "production"
 
 # KV 命名空间（自定义书源持久化）
-# 部署前执行: npx wrangler kv:namespace create "CUSTOM_SOURCES"
-# 然后把生成的 id 填入下方并取消注释
+# 部署前先在 GitHub 上设置 KV_NAMESPACE_ID secret，
+# 然后取消注释并将 id 替换为 $KV_NAMESPACE_ID
 # [[kv_namespaces]]
 # binding = "CUSTOM_SOURCES"
 # id = "your-kv-namespace-id"

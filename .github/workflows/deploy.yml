@@ -31,9 +31,30 @@ jobs:
       - name: Build frontend
         run: cd web && npm run build
 
+      - name: Prepare wrangler.toml with KV namespace
+        run: |
+          if [ -n "${{ secrets.KV_NAMESPACE_ID }}" ]; then
+            sed -i 's|# \[\[kv_namespaces\]\]|[[kv_namespaces]]|' wrangler.toml
+            sed -i 's|# binding = "CUSTOM_SOURCES"|binding = "CUSTOM_SOURCES"|' wrangler.toml
+            sed -i "s|# id = \"your-kv-namespace-id\"|id = \"${{ secrets.KV_NAMESPACE_ID }}\"|" wrangler.toml
+            echo "KV namespace configured: ${{ secrets.KV_NAMESPACE_ID }}"
+          else
+            echo "No KV_NAMESPACE_ID secret set, skipping KV namespace"
+          fi
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+          secrets: |
+            USERNAME
+            PASSWORD
+          # 非敏感变量从 GitHub Actions Variables 读取
+          # vars: |
+          #   LEGADO_ENABLED
+          #   LEGADO_SOURCES_JSON
+          #   LEGADO_SUBSCRIPTION_URLS
+          #   OPDS_ENABLED
+          #   OPDS_SOURCES_JSON
+          #   OPDS_URL

@@ -6,6 +6,7 @@ import { EpubReader } from '../components/reader/EpubReader';
 import { PdfReader } from '../components/reader/PdfReader';
 import { Spinner } from '../components/ui/Spinner';
 import { saveReadRecord } from '../stores/app';
+import { proxyHtmlUrls, proxyUrl } from '../utils';
 import type { BookChapter, BookChapterContent, BookReadManifest, BookReadRecord } from '../types';
 
 export function Read() {
@@ -286,7 +287,7 @@ export function Read() {
                 className="flex-1 overflow-y-auto px-6 py-8 text-base leading-8 text-slate-800 dark:text-slate-200"
                 style={{ maxWidth: 720, margin: '0 auto', width: '100%' }}
               >
-                {currentContent.content.split('\n').map((line, i) => {
+                {proxyHtmlUrls(currentContent.content).split('\n').map((line, i) => {
                   const trimmed = line.trim();
                   if (!trimmed) return null;
                   if (/^<img\b/.test(trimmed)) {
@@ -338,8 +339,8 @@ export function Read() {
         <div className="text-center">
           <p>无法在线阅读此格式</p>
           {manifest.acquisitionHref && (
-            <a href={manifest.acquisitionHref} target="_blank" rel="noreferrer" className="mt-2 inline-block text-emerald-600 underline">
-              直接下载
+            <a href={proxyUrl(manifest.acquisitionHref)} target="_blank" rel="noreferrer" className="mt-2 inline-block text-emerald-600 underline">
+              直接下载（通过 Worker）
             </a>
           )}
         </div>

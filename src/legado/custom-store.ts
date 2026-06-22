@@ -2,7 +2,8 @@
 /**
  * 自定义 Legado 书源存储
  *
- * 支持 Cloudflare Workers KV 持久化 + 内存缓存。
+ * 支持多用户隔离：每个用户的自定义书源存储在独立 KV key 下。
+ * 支持 KV 持久化 + 内存缓存。
  * 如果未绑定 KV，自动降级为纯内存存储（重启后丢失）。
  */
 
@@ -22,21 +23,69 @@ export interface CustomSourceEntry {
 
 // ── 常量 ────────────────────────────────────────────────
 
-const KV_KEY = 'custom:sources:registry';
+const KV_KEY_PREFIX = 'custom:sources:';
 const CACHE_TTL_MS = 60_000; // 内存缓存 60 秒后重新读取 KV
 
 // ── 内存状态 ────────────────────────────────────────────
 
 let _kv: KVNamespace | null = null;
-let _cache: { data: CustomSourceEntry[]; ts: number } | null = null;
-let _store = new Map<string, CustomSourceEntry>(); // 纯内存模式时使用
+/** 缓存按 username 分区 */
+const _cache = new Map<string, { data: CustomSourceEntry[]; ts: number }>();
+/** 纯内存模式的后备存储 */
+const _store = new Map<string, Map<string, CustomSourceEntry>>();
 
-/** 设置 KV 绑定（在 middleware 中调用） */
+// ── 内部 KV 读写 ────────────────────────────────────────
+
+function kvKey(username: string): string {
+  return `${KV_KEY_PREFIX}${username}`;
+}
+
+async function readAll(username: string): Promise<CustomSourceEntry[]> {
+  const cacheEntry = _cache.get(username);
+  if (_kv && cacheEntry && Date.now() - cacheEntry.ts < CACHE_TTL_MS) {
+    return cacheEntry.data;
+  }
+
+  if (_kv) {
+    try {
+      const raw = await _kv.get(kvKey(username));
+      if (raw) {
+        const parsed = JSON.parse(raw) as CustomSourceEntry[];
+        if (Array.isArray(parsed)) {
+          _cache.set(username, { data: parsed, ts: Date.now() });
+          return parsed;
+        }
+      }
+    } catch { /* 读 KV 失败，回退到内存 */ }
+    _cache.set(username, { data: [], ts: Date.now() });
+    return [];
+  }
+
+  // 纯内存模式
+  const userStore = _store.get(username) || new Map();
+  _store.set(username, userStore);
+  return Array.from(userStore.values());
+}
+
+async function writeAll(username: string, entries: CustomSourceEntry[]) {
+  if (_kv) {
+    try {
+      await _kv.put(kvKey(username), JSON.stringify(entries));
+      _cache.set(username, { data: entries, ts: Date.now() });
+    } catch { /* KV 写入失败，仅保留内存 */ }
+  }
+  // 纯内存模式
+  const userStore = new Map(entries.map((e) => [e.id, e]));
+  _store.set(username, userStore);
+}
+
+// ── 公开方法 ────────────────────────────────────────────
+
+/** 设置 KV 绑定 */
 export function setKvBinding(kv: KVNamespace | null) {
   _kv = kv;
   if (!kv) {
-    // 切换到纯内存模式时，清空缓存让它走 _store
-    _cache = null;
+    _cache.clear();
   }
 }
 
@@ -44,56 +93,15 @@ export function hasKvBinding(): boolean {
   return _kv !== null;
 }
 
-// ── 内部 KV 读写 ────────────────────────────────────────
-
-async function readAll(): Promise<CustomSourceEntry[]> {
-  // 有 KV + 缓存未过期
-  if (_kv && _cache && Date.now() - _cache.ts < CACHE_TTL_MS) {
-    return _cache.data;
-  }
-
-  if (_kv) {
-    try {
-      const raw = await _kv.get(KV_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as CustomSourceEntry[];
-        if (Array.isArray(parsed)) {
-          _cache = { data: parsed, ts: Date.now() };
-          return parsed;
-        }
-      }
-    } catch { /* 读 KV 失败，回退到内存 */ }
-    // KV 为空 → 初始化为空数组
-    _cache = { data: [], ts: Date.now() };
-    return [];
-  }
-
-  // 纯内存模式
-  return Array.from(_store.values());
-}
-
-async function writeAll(entries: CustomSourceEntry[]) {
-  if (_kv) {
-    try {
-      await _kv.put(KV_KEY, JSON.stringify(entries));
-      _cache = { data: entries, ts: Date.now() };
-    } catch { /* KV 写入失败，仅保留内存 */ }
-  }
-  // 纯内存模式：同步到 _store
-  _store = new Map(entries.map((e) => [e.id, e]));
-}
-
-// ── 公开方法（全部 async） ──────────────────────────────
-
-/** 获取所有自定义书源条目 */
-export async function getAllEntries(): Promise<CustomSourceEntry[]> {
-  const entries = await readAll();
+/** 获取用户的所有自定义书源条目 */
+export async function getAllEntries(username: string): Promise<CustomSourceEntry[]> {
+  const entries = await readAll(username);
   return entries.sort((a, b) => b.addedAt - a.addedAt);
 }
 
-/** 获取启用的自定义书源列表 */
-export async function getEnabledSources(): Promise<BookSource[]> {
-  const entries = await readAll();
+/** 获取用户启用的自定义书源列表 */
+export async function getEnabledSources(username: string): Promise<BookSource[]> {
+  const entries = await readAll(username);
   const enabled: BookSource[] = [];
   for (const entry of entries) {
     if (!entry.enabled) continue;
@@ -106,15 +114,12 @@ export async function getEnabledSources(): Promise<BookSource[]> {
   return enabled;
 }
 
-export async function getEntry(id: string): Promise<CustomSourceEntry | undefined> {
-  const entries = await readAll();
+export async function getEntry(username: string, id: string): Promise<CustomSourceEntry | undefined> {
+  const entries = await readAll(username);
   return entries.find((e) => e.id === id);
 }
 
-/**
- * 通过解析 JSON 添加一组自定义书源
- */
-export async function addCustomSources(rawJson: string): Promise<{ entry: CustomSourceEntry; errors: string[] }> {
+export async function addCustomSources(username: string, rawJson: string): Promise<{ entry: CustomSourceEntry; errors: string[] }> {
   let parsed: any;
   try {
     parsed = JSON.parse(rawJson);
@@ -153,16 +158,13 @@ export async function addCustomSources(rawJson: string): Promise<{ entry: Custom
     lastError: errors.length > 0 ? errors[errors.length - 1] : undefined,
   };
 
-  const entries = await readAll();
+  const entries = await readAll(username);
   entries.push(entry);
-  await writeAll(entries);
+  await writeAll(username, entries);
   return { entry, errors };
 }
 
-/**
- * 通过订阅 URL 添加自定义书源
- */
-export async function addSubscriptionSource(url: string): Promise<{ entry: CustomSourceEntry; errors: string[] }> {
+export async function addSubscriptionSource(username: string, url: string): Promise<{ entry: CustomSourceEntry; errors: string[] }> {
   const text = await fetchSubscription(url);
   let parsed: any;
   try {
@@ -198,35 +200,32 @@ export async function addSubscriptionSource(url: string): Promise<{ entry: Custo
     lastError: errors.length > 0 ? errors[errors.length - 1] : undefined,
   };
 
-  const entries = await readAll();
+  const entries = await readAll(username);
   entries.push(entry);
-  await writeAll(entries);
+  await writeAll(username, entries);
   return { entry, errors };
 }
 
-/** 删除一组自定义书源 */
-export async function removeCustomSource(id: string): Promise<boolean> {
-  const entries = await readAll();
+export async function removeCustomSource(username: string, id: string): Promise<boolean> {
+  const entries = await readAll(username);
   const idx = entries.findIndex((e) => e.id === id);
   if (idx === -1) return false;
   entries.splice(idx, 1);
-  await writeAll(entries);
+  await writeAll(username, entries);
   return true;
 }
 
-/** 切换启用状态 */
-export async function toggleCustomSource(id: string): Promise<CustomSourceEntry | null> {
-  const entries = await readAll();
+export async function toggleCustomSource(username: string, id: string): Promise<CustomSourceEntry | null> {
+  const entries = await readAll(username);
   const entry = entries.find((e) => e.id === id);
   if (!entry) return null;
   entry.enabled = !entry.enabled;
-  await writeAll(entries);
+  await writeAll(username, entries);
   return entry;
 }
 
-/** 获取统计 */
-export async function getStats() {
-  const entries = await readAll();
+export async function getStats(username: string) {
+  const entries = await readAll(username);
   let totalSources = 0;
   let enabledSources = 0;
   for (const entry of entries) {

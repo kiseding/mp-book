@@ -1,7 +1,8 @@
-import { BookOpen, Compass, Cog, Library, Moon, Search, Sun } from 'lucide-react';
+import { BookOpen, Compass, Cog, Library, LogIn, LogOut, Moon, Search, Sun, User } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useThemeStore } from '../stores/app';
+import { useAuthStore } from '../stores/auth';
 
 const tabs = [
   { href: '/', label: '发现', icon: Compass },
@@ -13,11 +14,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { dark, toggle } = useThemeStore();
+  const { user, isAuthenticated, logout } = useAuthStore();
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     if (dark) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [dark]);
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    await logout();
+    navigate('/login', { replace: true });
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-amber-50 text-slate-900 dark:from-gray-950 dark:via-gray-950 dark:to-emerald-950 dark:text-gray-100">
@@ -37,13 +46,50 @@ export function Layout({ children }: { children: React.ReactNode }) {
             mp-book
           </Link>
           <div className="flex-1" />
-          <Link
-            to="/sources"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-violet-50 hover:text-violet-700 dark:text-gray-300 dark:hover:bg-violet-500/10"
-            title="书源管理"
-          >
-            <Cog className="h-5 w-5" />
-          </Link>
+
+          {isAuthenticated && user ? (
+            <>
+              <Link
+                to="/sources"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-violet-50 hover:text-violet-700 dark:text-gray-300 dark:hover:bg-violet-500/10"
+                title="书源管理"
+              >
+                <Cog className="h-5 w-5" />
+              </Link>
+              {user.role === 'owner' && (
+                <Link
+                  to="/users"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-amber-50 hover:text-amber-700 dark:text-gray-300 dark:hover:bg-amber-500/10"
+                  title="用户管理"
+                >
+                  <User className="h-5 w-5" />
+                </Link>
+              )}
+              <div className="hidden items-center gap-1 md:flex">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                  <User className="h-3 w-3" />
+                  {user.username}
+                </span>
+                <button
+                  onClick={handleLogout}
+                  disabled={loggingOut}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-red-500/10"
+                  title="退出登录"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </div>
+            </>
+          ) : (
+            <Link
+              to="/login"
+              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700"
+            >
+              <LogIn className="h-3.5 w-3.5" />
+              登录
+            </Link>
+          )}
+
           <button
             onClick={toggle}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-emerald-50 hover:text-emerald-700 dark:text-gray-300 dark:hover:bg-emerald-500/10"

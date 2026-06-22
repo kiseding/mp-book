@@ -169,6 +169,8 @@ export interface BookSearchFailure {
 export interface BookSearchResult {
   results: BookListItem[];
   failedSources: BookSearchFailure[];
+  searchedCount?: number;
+  totalSources?: number;
 }
 
 export type BookFormat = 'epub' | 'pdf' | 'chapters';
