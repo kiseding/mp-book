@@ -42,19 +42,22 @@ jobs:
             echo "No KV_NAMESPACE_ID secret set, skipping KV namespace"
           fi
 
+      # 先部署 Worker（新建或更新）
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          secrets: |
-            USERNAME
-            PASSWORD
-          # 非敏感变量从 GitHub Actions Variables 读取
-          # vars: |
-          #   LEGADO_ENABLED
-          #   LEGADO_SOURCES_JSON
-          #   LEGADO_SUBSCRIPTION_URLS
-          #   OPDS_ENABLED
-          #   OPDS_SOURCES_JSON
-          #   OPDS_URL
+
+      # 部署成功后再上传 secrets（Worker 必须先存在，否则 secret put 会失败）
+      - name: Upload secrets
+        run: |
+          if [ -n "${{ secrets.USERNAME }}" ]; then
+            echo "${{ secrets.USERNAME }}" | npx wrangler secret put USERNAME
+          fi
+          if [ -n "${{ secrets.PASSWORD }}" ]; then
+            echo "${{ secrets.PASSWORD }}" | npx wrangler secret put PASSWORD
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
