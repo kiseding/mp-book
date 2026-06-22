@@ -344,6 +344,8 @@ async function detectCapabilities(source: BookSource): Promise<BookSourceCapabil
     const data: BookSourceCapabilities = {
       searchSupported: !!searchLink || !!source.searchTemplate,
       catalogSupported: navigationCount > 0 || entryCount > 0,
+      searchMode: searchLink ? 'opds' : source.searchTemplate ? 'template' : 'disabled',
+      catalogMode: navigationCount > 0 ? 'navigation' : entryCount > 0 ? 'flat' : 'disabled',
       acquisitionTypes,
     };
     capabilityCache.set(source.id, { data, expiresAt: now + CAP_TTL });
@@ -352,6 +354,8 @@ async function detectCapabilities(source: BookSource): Promise<BookSourceCapabil
     const failureData: BookSourceCapabilities = {
       searchSupported: !!source.searchTemplate,
       catalogSupported: false,
+      searchMode: source.searchTemplate ? 'template' : 'disabled',
+      catalogMode: 'disabled',
       acquisitionTypes: [],
     };
     if (cached?.data) {

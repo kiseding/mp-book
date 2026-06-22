@@ -3,6 +3,7 @@ dist/
 .open-next/
 .wrangler/
 .env
+.dev.vars
 *.log
 web/dist/
 web/node_modules/

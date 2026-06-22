@@ -8,6 +8,7 @@ export interface BookSource {
   id: string;
   name: string;
   url: string;
+  type?: 'opds' | 'legado';
   enabled?: boolean;
   authMode?: 'none' | 'basic' | 'header';
   capabilities?: BookSourceCapabilities;
@@ -75,10 +76,27 @@ export interface BookSearchResult {
 
 export type BookFormat = 'epub' | 'pdf' | 'chapters';
 
+export interface BookChapter {
+  id: string;
+  title: string;
+  href: string;
+  order: number;
+}
+
+export interface BookChapterContent {
+  id: string;
+  title: string;
+  href: string;
+  content: string;
+  nextHref?: string;
+  previousHref?: string;
+}
+
 export interface BookReadManifest {
   book: BookDetail;
   format: BookFormat;
   fileUrl?: string;
+  chaptersUrl?: string;
   acquisitionHref?: string;
   lastRecord?: BookReadRecord | null;
 }

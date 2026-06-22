@@ -1,4 +1,4 @@
-import { BookOpen, Compass, Library, Moon, Search, Sun } from 'lucide-react';
+import { BookOpen, Compass, Cog, Library, Moon, Search, Sun } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useThemeStore } from '../stores/app';
@@ -37,6 +37,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
             mp-book
           </Link>
           <div className="flex-1" />
+          <Link
+            to="/sources"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-violet-50 hover:text-violet-700 dark:text-gray-300 dark:hover:bg-violet-500/10"
+            title="书源管理"
+          >
+            <Cog className="h-5 w-5" />
+          </Link>
           <button
             onClick={toggle}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-emerald-50 hover:text-emerald-700 dark:text-gray-300 dark:hover:bg-emerald-500/10"

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Compass, Search, Sparkles } from 'lucide-react';
+import { BookOpen, Cog, Compass, Search, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getSources } from '../api';
 import { Empty } from '../components/ui/Empty';
@@ -71,6 +71,13 @@ export function Home() {
                 <BookOpen className="h-4 w-4" />
                 我的书架
               </Link>
+              <Link
+                to="/sources"
+                className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-white/70 px-5 py-3 text-sm font-semibold text-emerald-900 transition-colors hover:bg-emerald-50 dark:border-emerald-500/20 dark:bg-gray-950/50 dark:text-emerald-100"
+              >
+                <Cog className="h-4 w-4" />
+                管理书源
+              </Link>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
@@ -115,9 +122,15 @@ export function Home() {
             <div className="relative flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="truncate text-base font-bold text-slate-950 dark:text-white">{source.name}</div>
-                <div className="mt-1 text-xs font-medium uppercase tracking-widest text-emerald-500">OPDS</div>
+                <div className={`mt-1 text-xs font-medium uppercase tracking-widest ${source.type === 'legado' ? 'text-violet-500' : 'text-emerald-500'}`}>
+                  {source.type === 'legado' ? 'Legado' : 'OPDS'}
+                </div>
               </div>
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/20">
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1 ${
+                source.type === 'legado'
+                  ? 'bg-violet-50 text-violet-600 ring-violet-100 dark:bg-violet-500/10 dark:text-violet-200 dark:ring-violet-500/20'
+                  : 'bg-emerald-50 text-emerald-600 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/20'
+              }`}>
                 <Compass className="h-5 w-5" />
               </div>
             </div>

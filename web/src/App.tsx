@@ -6,6 +6,7 @@ import { Catalog } from './pages/Catalog';
 import { Detail } from './pages/Detail';
 import { Read } from './pages/Read';
 import { Shelf } from './pages/Shelf';
+import { SourceManager } from './pages/SourceManager';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
           <Route path="/detail" element={<Detail />} />
           <Route path="/read" element={<Read />} />
           <Route path="/shelf" element={<Shelf />} />
+          <Route path="/sources" element={<SourceManager />} />
         </Routes>
       </Layout>
     </BrowserRouter>

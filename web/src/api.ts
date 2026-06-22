@@ -1,5 +1,7 @@
 import type {
   BookCatalogResult,
+  BookChapter,
+  BookChapterContent,
   BookDetail,
   BookReadManifest,
   BookSearchResult,
@@ -63,11 +65,65 @@ export async function postReadManifest(payload: {
   sourceId: string;
   href: string;
   acquisitionHref?: string;
-  format?: 'epub' | 'pdf';
+  format?: 'epub' | 'pdf' | 'chapters';
 }): Promise<BookReadManifest> {
   return fetchJson<BookReadManifest>(`${API_BASE}/books/read/manifest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+}
+
+// ── Legado 特有 API ───────────────────────────────────────
+
+export async function getLegadoChapters(sourceId: string, tocHref: string): Promise<BookChapter[]> {
+  const params = new URLSearchParams({ sourceId, tocHref });
+  const data = await fetchJson<{ chapters: BookChapter[] }>(`${API_BASE}/books/chapters?${params.toString()}`);
+  return data.chapters || [];
+}
+
+export async function getChapterContent(sourceId: string, chapterHref: string, tocHref?: string): Promise<BookChapterContent> {
+  const params = new URLSearchParams({ sourceId, chapterHref });
+  if (tocHref) params.set('tocHref', tocHref);
+  return fetchJson<BookChapterContent>(`${API_BASE}/books/content?${params.toString()}`);
+}
+
+// ── 自定义书源管理 ───────────────────────────────────────
+
+export interface CustomSourceEntry {
+  id: string;
+  source: 'manual' | 'subscription' | 'import';
+  raw: string;
+  addedAt: number;
+  enabled: boolean;
+  sources: BookSource[];
+  lastError?: string;
+}
+
+export async function getCustomSources(): Promise<{ entries: CustomSourceEntry[]; stats: { entries: number; totalSources: number; enabledSources: number } }> {
+  return fetchJson(`${API_BASE}/books/custom-sources`);
+}
+
+export async function importCustomSources(raw: string): Promise<{ ok: boolean; entry: CustomSourceEntry; errors: string[] }> {
+  return fetchJson(`${API_BASE}/books/custom-sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'import', raw }),
+  });
+}
+
+export async function subscribeCustomSource(url: string): Promise<{ ok: boolean; entry: CustomSourceEntry; errors: string[] }> {
+  return fetchJson(`${API_BASE}/books/custom-sources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'subscribe', url }),
+  });
+}
+
+export async function deleteCustomSource(id: string): Promise<void> {
+  await fetch(`${API_BASE}/books/custom-sources/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export async function toggleCustomSource(id: string): Promise<{ ok: boolean; entry: CustomSourceEntry }> {
+  return fetchJson(`${API_BASE}/books/custom-sources/${encodeURIComponent(id)}/toggle`, { method: 'PUT' });
 }

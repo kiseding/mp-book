@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
-import { BookOpen, Bookmark, Calendar, CheckCircle2, ChevronRight, User } from 'lucide-react';
-import { getBookDetail, postReadManifest } from '../api';
+import { BookOpen, Bookmark, Calendar, CheckCircle2, ChevronRight, List, User } from 'lucide-react';
+import { getBookDetail, getLegadoChapters, postReadManifest } from '../api';
 import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import { saveToShelf, saveToShelfFromDetail } from '../stores/app';
-import type { BookDetail } from '../types';
+import type { BookChapter, BookDetail } from '../types';
 
 export function Detail() {
   const [params] = useSearchParams();
@@ -14,8 +14,13 @@ export function Detail() {
   const href = params.get('href') || '';
 
   const [detail, setDetail] = useState<BookDetail | null>(null);
+  const [chapters, setChapters] = useState<BookChapter[]>([]);
+  const [tocHref, setTocHref] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingChapters, setLoadingChapters] = useState(false);
   const [error, setError] = useState('');
+
+  const isLegado = detail?.acquisitionLinks?.some((l) => l.rel === 'legado:chapters');
 
   useEffect(() => {
     if (!sourceId || !href) {
@@ -25,7 +30,19 @@ export function Detail() {
     }
     setLoading(true);
     getBookDetail(sourceId, href)
-      .then(setDetail)
+      .then((d) => {
+        setDetail(d);
+        // 尝试加载章节列表
+        const tocLink = d.acquisitionLinks?.find((l) => l.rel === 'legado:chapters');
+        if (tocLink) {
+          setTocHref(tocLink.href);
+          setLoadingChapters(true);
+          getLegadoChapters(sourceId, tocLink.href)
+            .then(setChapters)
+            .catch(() => {/* 静默失败 */})
+            .finally(() => setLoadingChapters(false));
+        }
+      })
       .catch((err) => setError(err.message || '加载详情失败'))
       .finally(() => setLoading(false));
   }, [sourceId, href]);
@@ -39,6 +56,10 @@ export function Detail() {
     } catch (err) {
       alert((err as Error).message);
     }
+  };
+
+  const openChapter = (chapter: BookChapter) => {
+    navigate(`/read?sourceId=${encodeURIComponent(sourceId)}&href=${encodeURIComponent(chapter.href)}&tocHref=${encodeURIComponent(tocHref)}`);
   };
 
   if (loading) {
@@ -105,7 +126,7 @@ export function Detail() {
             <div className="flex flex-wrap gap-3 pt-2">
               <Button onClick={startRead}>
                 <BookOpen className="h-4 w-4" />
-                开始阅读
+                {isLegado ? '开始阅读（章节）' : '开始阅读'}
               </Button>
               <Button variant="secondary" onClick={() => saveToShelfFromDetail(detail)}>
                 <Bookmark className="h-4 w-4" />
@@ -116,14 +137,14 @@ export function Detail() {
             <div className="space-y-2 pt-2 text-sm text-slate-500 dark:text-slate-400">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                格式: EPUB / PDF
+                格式: {isLegado ? '章节' : 'EPUB / PDF'}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {detail.navigation && detail.navigation.length > 0 && (
+      {detail.navigation && detail.navigation.length > 0 && !isLegado && (
         <div className="rounded-[2rem] border border-emerald-100 bg-white/80 p-6 dark:border-emerald-500/10 dark:bg-gray-950/70">
           <h2 className="text-lg font-bold text-slate-950 dark:text-white">相关目录</h2>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
@@ -138,6 +159,40 @@ export function Detail() {
               </Link>
             ))}
           </div>
+        </div>
+      )}
+
+      {isLegado && (
+        <div className="rounded-[2rem] border border-emerald-100 bg-white/80 p-6 dark:border-emerald-500/10 dark:bg-gray-950/70">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-950 dark:text-white">
+              <List className="mr-2 inline-block h-5 w-5" />
+              章节列表
+            </h2>
+            {chapters.length > 0 && (
+              <span className="text-sm text-slate-500 dark:text-slate-400">共 {chapters.length} 章</span>
+            )}
+          </div>
+          {loadingChapters ? (
+            <div className="flex justify-center py-8">
+              <Spinner className="h-6 w-6" />
+            </div>
+          ) : chapters.length > 0 ? (
+            <div className="mt-4 max-h-[60vh] divide-y divide-emerald-100 overflow-y-auto dark:divide-emerald-500/10">
+              {chapters.map((ch) => (
+                <button
+                  key={ch.id}
+                  onClick={() => openChapter(ch)}
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
+                >
+                  <span className="line-clamp-1 text-slate-700 dark:text-slate-300">{ch.title}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">暂无章节信息</p>
+          )}
         </div>
       )}
     </div>

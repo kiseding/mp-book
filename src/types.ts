@@ -1,3 +1,86 @@
+export interface LegadoRuleSearch {
+  bookList?: string;
+  name?: string;
+  author?: string;
+  intro?: string;
+  coverUrl?: string;
+  bookUrl?: string;
+  kind?: string;
+  lastChapter?: string;
+  checkKeyWord?: string;
+  wordCount?: string;
+}
+
+export type LegadoRuleExplore = LegadoRuleSearch;
+
+export interface LegadoRuleBookInfo {
+  init?: string;
+  name?: string;
+  author?: string;
+  intro?: string;
+  coverUrl?: string;
+  tocUrl?: string;
+  kind?: string;
+  lastChapter?: string;
+  wordCount?: string;
+}
+
+export interface LegadoRuleToc {
+  chapterList?: string;
+  chapterName?: string;
+  chapterUrl?: string;
+  isVip?: string;
+  isPay?: string;
+  nextTocUrl?: string;
+  updateTime?: string;
+  wordCount?: string;
+  chapterInfo?: string;
+}
+
+export interface LegadoRuleContent {
+  content?: string;
+  nextContentUrl?: string;
+  imageStyle?: string;
+  sourceRegex?: string;
+  replaceRegex?: string;
+  payAction?: string;
+}
+
+export interface LegadoBookSourceRule {
+  bookSourceName?: string;
+  bookSourceUrl?: string;
+  bookSourceGroup?: string;
+  bookSourceType?: number;
+  customButton?: boolean | unknown;
+  eventListener?: boolean | unknown;
+  variable?: string | Record<string, unknown>;
+  loginUi?: string | unknown;
+  concurrentRate?: string | number;
+  respondTime?: number;
+  lastUpdateTime?: string | number;
+  enabled?: boolean;
+  enabledCookieJar?: boolean;
+  enabledExplore?: boolean;
+  exploreUrl?: string;
+  header?: string | Record<string, string>;
+  jsLib?: string;
+  loginUrl?: string;
+  searchUrl?: string;
+  bookInfoUrl?: string;
+  bookInfoInit?: string;
+  bookUrlPattern?: string;
+  tocUrl?: string;
+  chapterUrl?: string;
+  ruleSearch?: LegadoRuleSearch;
+  ruleExplore?: LegadoRuleExplore;
+  ruleBookInfo?: LegadoRuleBookInfo;
+  ruleToc?: LegadoRuleToc;
+  ruleContent?: LegadoRuleContent;
+  ruleReview?: unknown;
+  customOrder?: number;
+  weight?: number;
+}
+
 export interface BookSource {
   id: string;
   name: string;
@@ -10,13 +93,20 @@ export interface BookSource {
   headerValue?: string;
   searchTemplate?: string;
   preferFormat?: Array<'epub' | 'pdf'>;
+  language?: string;
+  legado?: LegadoBookSourceRule;
+  type?: 'opds' | 'legado';
   capabilities?: BookSourceCapabilities;
 }
 
 export interface BookSourceCapabilities {
   searchSupported: boolean;
   catalogSupported: boolean;
+  searchMode: 'opds' | 'template' | 'legado' | 'disabled';
+  catalogMode: 'navigation' | 'acquisition' | 'flat' | 'legado' | 'disabled';
   acquisitionTypes: string[];
+  lastCheckedAt?: number;
+  lastError?: string;
 }
 
 export interface BookAcquisitionLink {
@@ -29,6 +119,8 @@ export interface BookAcquisitionLink {
 export interface BookNavLink {
   title: string;
   href: string;
+  rel?: string;
+  type?: string;
 }
 
 export interface BookListItem {
@@ -85,8 +177,25 @@ export interface BookReadManifest {
   book: BookDetail;
   format: BookFormat;
   fileUrl?: string;
+  chaptersUrl?: string;
   acquisitionHref?: string;
   lastRecord?: BookReadRecord | null;
+}
+
+export interface BookChapter {
+  id: string;
+  title: string;
+  href: string;
+  order: number;
+}
+
+export interface BookChapterContent {
+  id: string;
+  title: string;
+  href: string;
+  content: string;
+  nextHref?: string;
+  previousHref?: string;
 }
 
 export interface BookLocator {
