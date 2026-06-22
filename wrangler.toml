@@ -19,7 +19,3 @@ NODE_ENV = "production"
 # [[kv_namespaces]]
 # binding = "CUSTOM_SOURCES"
 # id = "your-kv-namespace-id"
-
-# 书源配置示例（部署前请替换为你的 OPDS 源）
-# OPDS_ENABLED = "true"
-# OPDS_SOURCES_JSON = '[{"id":"demo","name":"示例书源","url":"https://example.com/opds","enabled":true}]'

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Cog, Compass, Search, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getSources } from '../api';
-import { Empty } from '../components/ui/Empty';
+
 import { Spinner } from '../components/ui/Spinner';
 import type { BookSource } from '../types';
 
@@ -110,7 +110,24 @@ export function Home() {
 
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-950/20">{error}</div>}
 
-      {!loading && !error && sources.length === 0 && <Empty message="暂无可用书源，请检查 OPDS 配置" />}
+      {!loading && !error && sources.length === 0 && (
+        <div className="text-center py-16">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-violet-100 text-violet-600 dark:bg-violet-500/10 dark:text-violet-200">
+            <Cog className="h-7 w-7" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-950 dark:text-white">还没有书源</h3>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            导入 Legado 书源或配置 OPDS 源后即可开始使用
+          </p>
+          <Link
+            to="/sources"
+            className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-violet-700"
+          >
+            <Cog className="h-4 w-4" />
+            去添加书源
+          </Link>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {sources.map((source) => (

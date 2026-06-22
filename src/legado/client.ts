@@ -1155,12 +1155,19 @@ async function resolveLegadoConfig(): Promise<ResolvedLegadoConfig> {
   } catch {}
 
   // 合并用户通过 UI 添加的自定义书源
+  let hasCustom = false;
   try {
     const customSources = await getCustomSources();
     if (customSources.length > 0) {
       sources = [...sources, ...customSources];
+      hasCustom = true;
     }
   } catch {}
+
+  // 有自定义书源或订阅源时自动启用，无需配置环境变量
+  if (!enabled && (hasCustom || sources.length > 0)) {
+    enabled = true;
+  }
 
   return { enabled, cacheTTL, sources: sources.filter((source) => !!source.url && source.enabled !== false) };
 }
