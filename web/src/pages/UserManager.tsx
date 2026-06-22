@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   AlertCircle,
-  CheckCircle2,
   Loader2,
   Plus,
   Shield,
@@ -199,11 +198,7 @@ export function UserManager() {
 
       {/* 用户列表 */}
       {users.length === 0 ? (
-        <Empty
-          icon={User}
-          title="暂无用户"
-          description="点击「添加用户」创建第一个用户"
-        />
+        <Empty message="暂无用户，点击「添加用户」创建第一个用户" />
       ) : (
         <div className="space-y-3">
           {users.map((u) => (

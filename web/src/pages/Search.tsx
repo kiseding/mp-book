@@ -15,7 +15,6 @@ import { BookCard } from '../components/BookCard';
 import { Button } from '../components/ui/Button';
 import { Empty } from '../components/ui/Empty';
 import { Input } from '../components/ui/Input';
-import { Spinner } from '../components/ui/Spinner';
 import type { BookListItem, BookSearchFailure, BookSource } from '../types';
 
 const QUICK_SEARCHES = ['三体', '刘慈欣', '东野圭吾', '哈利波特'];
@@ -324,7 +323,7 @@ export function Search() {
       )}
 
       {!loading && initialQ && results.length === 0 && failed.length === 0 && (
-        <Empty icon={SearchIcon} title="未找到相关书籍" description="试试其他关键词或书源" />
+        <Empty message="未找到相关书籍，试试其他关键词或书源" />
       )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
