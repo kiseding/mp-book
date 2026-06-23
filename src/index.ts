@@ -356,7 +356,7 @@ app.get('/api/books/read/manifest', async (c) => {
           acquisitionLinks: [{ rel: 'http://opds-spec.org/acquisition', type: pdf ? 'application/pdf' : 'application/epub+zip', href: acquisitionHref }],
         },
         format: pdf ? 'pdf' : 'epub',
-        fileUrl: `/api/books/file?sourceId=${encodeURIComponent(sourceId)}&href=${encodeURIComponent(acquisitionHref)}`,
+        fileUrl: acquisitionHref,
         acquisitionHref,
       });
     }
@@ -366,7 +366,7 @@ app.get('/api/books/read/manifest', async (c) => {
     return c.json({
       book: detail,
       format: preferred.format,
-      fileUrl: `/api/books/file?sourceId=${encodeURIComponent(sourceId)}&href=${encodeURIComponent(preferred.href)}`,
+      fileUrl: preferred.href,
       acquisitionHref: preferred.href,
     });
   } catch (error) {
@@ -401,72 +401,9 @@ app.post('/api/books/read/manifest', async (c) => {
     return c.json({
       book: detail,
       format: preferred.format,
-      fileUrl: `/api/books/file?sourceId=${encodeURIComponent(sourceId)}&href=${encodeURIComponent(preferred.href)}`,
+      fileUrl: preferred.href,
       acquisitionHref: preferred.href,
     });
-  } catch (error) {
-    return c.json({ error: (error as Error).message }, 500);
-  }
-});
-
-// ── 文件 / 图片代理 ─────────────────────────────────────
-
-app.get('/api/books/file', async (c) => {
-  try {
-    const sourceId = c.req.query('sourceId');
-    const href = c.req.query('href');
-    if (!sourceId || !href) return c.json({ error: '缺少参数' }, 400);
-    const type = await resolveSourceType(sourceId);
-    if (type === 'legado') return c.json({ error: 'Legado 书源不支持文件代理' }, 400);
-    return opdsClient.proxyFile(sourceId, href);
-  } catch (error) {
-    return c.json({ error: (error as Error).message }, 500);
-  }
-});
-
-app.get('/api/books/image', async (c) => {
-  try {
-    const sourceId = c.req.query('sourceId');
-    const url = c.req.query('url');
-    if (!sourceId || !url) return c.json({ error: '缺少参数' }, 400);
-    const source = await legadoClient.getSourceById(sourceId);
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
-        Referer: source.url,
-      },
-    });
-    const headers = new Headers();
-    const ct = response.headers.get('content-type');
-    if (ct) headers.set('content-type', ct);
-    headers.set('cache-control', 'public, max-age=86400');
-    return new Response(response.body, { status: response.status, headers });
-  } catch (error) {
-    return c.json({ error: (error as Error).message }, 500);
-  }
-});
-
-// 通用图片代理 — 不需要 sourceId，所有外部图片通过 Worker 网络加载
-app.get('/api/image-proxy', async (c) => {
-  try {
-    const url = c.req.query('url');
-    if (!url) return c.json({ error: '缺少 url 参数' }, 400);
-    // 只代理 http(s) 图片
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return c.json({ error: '不支持的 URL 协议' }, 400);
-    }
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
-      },
-    });
-    const headers = new Headers();
-    const ct = response.headers.get('content-type');
-    if (ct) headers.set('content-type', ct);
-    headers.set('cache-control', 'public, max-age=86400');
-    // 允许跨域使用
-    headers.set('Access-Control-Allow-Origin', '*');
-    return new Response(response.body, { status: response.status, headers });
   } catch (error) {
     return c.json({ error: (error as Error).message }, 500);
   }

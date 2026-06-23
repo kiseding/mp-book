@@ -78,10 +78,6 @@ export function normalizeUrl(base: string, href?: string): string {
   return new URL(href, base).toString();
 }
 
-export function buildProxyUrl(sourceId: string, href: string): string {
-  return `/api/books/file?sourceId=${encodeURIComponent(sourceId)}&href=${encodeURIComponent(href)}`;
-}
-
 function mapFormat(type: string): 'epub' | 'pdf' | null {
   const lower = type.toLowerCase();
   if (lower.includes('epub')) return 'epub';
@@ -165,7 +161,7 @@ function mapEntryToItem(source: BookSource, entry: ParsedFeedEntry): BookListIte
     author: entry.author,
     cover: (() => {
       const coverHref = pickCoverLink(entry.links);
-      return coverHref ? buildProxyUrl(source.id, coverHref) : undefined;
+      return coverHref ? coverHref : undefined;
     })(),
     summary: entry.summary || entry.content || undefined,
     language: entry.language,
@@ -530,20 +526,6 @@ export class OPDSClient {
     return source;
   }
 
-  async proxyFile(sourceId: string, href: string): Promise<Response> {
-    const source = await this.getSourceById(sourceId);
-    const target = normalizeUrl(source.url, href);
-    const response = await fetch(target, { headers: buildHeaders(source) });
-    const headers = new Headers();
-    const contentType = response.headers.get('content-type');
-    const contentLength = response.headers.get('content-length');
-    const contentDisposition = response.headers.get('content-disposition');
-    if (contentType) headers.set('content-type', contentType);
-    if (contentLength) headers.set('content-length', contentLength);
-    if (contentDisposition) headers.set('content-disposition', contentDisposition);
-    headers.set('cache-control', 'public, max-age=3600');
-    return new Response(response.body, { status: response.status, headers });
-  }
 }
 
 export const opdsClient = new OPDSClient();

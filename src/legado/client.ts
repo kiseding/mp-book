@@ -1152,44 +1152,17 @@ function chapterPageStem(url: string) {
   }
 }
 
-/** 将内容中所有外部资源 URL 替换为 Worker 代理地址 */
-function proxyExternalUrls(content: string): string {
-  if (!content) return content;
-  // 代理 <img src="...">
-  content = content.replace(/<img\b([^>]*?)\bsrc=(['"])(.*?)\2([^>]*)>/gi, (match, before, quote, rawSrc, after) => {
-    const src = rawSrc.split(',{')[0];
-    if (!src || src.startsWith('/api/') || src.startsWith('data:')) return match;
-    if (!src.startsWith('http://') && !src.startsWith('https://')) return match;
-    const proxied = `/api/image-proxy?url=${encodeURIComponent(src)}`;
-    return `<img${before}src=${quote}${proxied}${quote}${after}>`;
-  });
-  // 代理 <source src="...">（视频/音频）
-  content = content.replace(/<source\b([^>]*?)\bsrc=(['"])(.*?)\2([^>]*)>/gi, (match, before, quote, rawSrc, after) => {
-    if (!rawSrc || rawSrc.startsWith('/api/') || rawSrc.startsWith('data:')) return match;
-    if (!rawSrc.startsWith('http://') && !rawSrc.startsWith('https://')) return match;
-    const proxied = `/api/image-proxy?url=${encodeURIComponent(rawSrc)}`;
-    return `<source${before}src=${quote}${proxied}${quote}${after}>`;
-  });
-  // 代理 <video poster="...">、<audio> 等其它 media 属性
-  content = content.replace(/\b(poster|href)=(['"])((?:https?:)?\/\/.*?)\2/gi, (match, attr, quote, url) => {
-    if (url.startsWith('/api/')) return match;
-    const proxied = `/api/image-proxy?url=${encodeURIComponent(url)}`;
-    return `${attr}=${quote}${proxied}${quote}`;
-  });
-  return content;
-}
 
+
+/** 漫画站图片去 Legado 选项后缀，浏览器直接直连 */
 function proxyChapterImages(content: string, source: BookSource) {
   if (!/<img\b/i.test(content)) return content;
   const rule = source.legado;
   if (rule?.bookSourceType !== 2 && source.legado?.bookSourceType !== 2) return content;
   return content.replace(/<img\b([^>]*?)\bsrc=(['"])(.*?)\2([^>]*)>/gi, (match, before, quote, rawSrc, after) => {
-    if (!rawSrc || rawSrc.startsWith('/api/books/image')) return match;
     const optionIndex = rawSrc.indexOf(',{');
     const src = optionIndex > 0 ? rawSrc.slice(0, optionIndex) : rawSrc;
-    const options = optionIndex > 0 ? rawSrc.slice(optionIndex + 1) : '';
-    const proxied = `/api/books/image?sourceId=${encodeURIComponent(source.id)}&url=${encodeURIComponent(src)}${options ? `&options=${encodeURIComponent(options)}` : ''}`;
-    return `<img${before}src=${quote}${proxied}${quote}${after}>`;
+    return `<img${before}src=${quote}${src}${quote} referrerpolicy="no-referrer"${after}>`;
   });
 }
 
@@ -1911,10 +1884,10 @@ export class LegadoClient {
       id: stableId(`${source.id}|${targetUrl}`),
       title: index >= 0 ? chapters[index].title : '',
       href: targetUrl,
-      content: proxyExternalUrls(proxyChapterImages(cleanContent(applyRuleFilters(rawContent, [
+      content: proxyChapterImages(cleanContent(applyRuleFilters(rawContent, [
         ...(rule.ruleContent.sourceRegex ? [rule.ruleContent.sourceRegex, ''] : []),
         ...((rule.ruleContent as any).replaceRegex ? splitRuleFilters((rule.ruleContent as any).replaceRegex).filters : []),
-      ])), source)),
+      ])), source),
       previousHref: index > 0 ? chapters[index - 1].href : undefined,
       nextHref: index >= 0 && index + 1 < chapters.length ? chapters[index + 1].href : undefined,
     };
