@@ -58,6 +58,26 @@ async function getCacheTTL(): Promise<number> {
   return _resolvedCacheTTL;
 }
 
+// 免费套餐子请求上限 50，预留余量给 OPDS 等其他操作
+const SUBREQUEST_BUDGET = 45;
+let _subrequestsUsed = 0;
+
+/** 注册一次耗费预算，超限则抛错 */
+function consumeBudget(): void {
+  _subrequestsUsed += 1;
+  if (_subrequestsUsed > SUBREQUEST_BUDGET) {
+    throw new Error(`子请求预算耗尽（免费套餐上限 50），已搜索 ${_subrequestsUsed - 1} 次`);
+  }
+}
+
+function resetBudget(): void {
+  _subrequestsUsed = 0;
+}
+
+function usedBudget(): number {
+  return _subrequestsUsed;
+}
+
 interface RequestOptions {
   url: string;
   method?: string;
@@ -1302,6 +1322,8 @@ async function fetchText(source: BookSource, url: string): Promise<string> {
 
   let lastError: unknown;
   const maxAttempts = Math.max(1, (request.retry ?? 1) + 1);
+  // 预算耗尽时直接失败，不重试
+  consumeBudget();
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
@@ -1582,15 +1604,25 @@ export class LegadoClient {
   }
 
   async searchBooks(q: string, sourceId?: string, username?: string): Promise<BookSearchResult> {
+    resetBudget();
     const sources = await this.getSearchSources(sourceId, username);
     const results: BookListItem[] = [];
     const failedSources: BookSearchFailure[] = [];
     // 逐个搜索而非并行，避免单个 Worker 调用子请求超限
     for (const source of sources) {
+      // 估算每个源最多需 5（翻页）+ 1（配置），预算不够则跳过
+      if (usedBudget() + 6 > SUBREQUEST_BUDGET) {
+        failedSources.push({ sourceId: source.id, sourceName: source.name, error: '子请求预算不足（免费套餐 50 上限），跳过该源' });
+        continue;
+      }
       try {
         const sourceResult = await this.searchBooksSource(q, source, username);
         results.push(...sourceResult.results);
       } catch (error) {
+        if ((error as Error).message?.includes('预算耗尽')) {
+          failedSources.push({ sourceId: source.id, sourceName: source.name, error: '子请求预算不足（免费套餐 50 上限），跳过剩余书源' });
+          break;
+        }
         failedSources.push({ sourceId: source.id, sourceName: source.name, error: (error as Error).message });
       }
     }
@@ -1903,6 +1935,14 @@ export class LegadoClient {
       acquisitionTypes: ['application/x-legado-chapters+json'],
       lastCheckedAt: Date.now(),
     };
+  }
+
+  resetBudget(): void {
+    resetBudget();
+  }
+
+  remainingBudget(): number {
+    return Math.max(0, SUBREQUEST_BUDGET - _subrequestsUsed);
   }
 }
 

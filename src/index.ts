@@ -180,6 +180,7 @@ app.get('/api/books/search/stream', async (c) => {
   // 仅 Legado 书源支持流式搜索
   const sources = await legadoClient.getSearchSources(undefined, username);
   const totalSources = sources.length;
+  legadoClient.resetBudget();
 
   return streamSSE(c, async (stream) => {
     // 1) 发送开始事件，告知总书源数
@@ -187,7 +188,21 @@ app.get('/api/books/search/stream', async (c) => {
 
     // 2) 逐个搜索书源并推送进度
     let completed = 0;
+    let budgetExhausted = false;
     for (const source of sources) {
+      if (budgetExhausted || legadoClient.remainingBudget() < 6) {
+        completed++;
+        await stream.writeSSE({
+          event: 'source_error',
+          data: JSON.stringify({
+            completedSources: completed,
+            sourceId: source.id,
+            sourceName: source.name,
+            error: '子请求预算不足（免费套餐 50 上限），跳过剩余书源',
+          }),
+        });
+        continue;
+      }
       try {
         const result = await legadoClient.searchBooksSource(q, source, username);
         completed++;
@@ -202,13 +217,15 @@ app.get('/api/books/search/stream', async (c) => {
         });
       } catch (e) {
         completed++;
+        const msg = (e as Error).message || '';
+        if (msg.includes('预算耗尽')) budgetExhausted = true;
         await stream.writeSSE({
           event: 'source_error',
           data: JSON.stringify({
             completedSources: completed,
             sourceId: source.id,
             sourceName: source.name,
-            error: (e as Error).message,
+            error: budgetExhausted ? '子请求预算不足（免费套餐 50 上限），跳过剩余书源' : msg,
           }),
         });
       }
